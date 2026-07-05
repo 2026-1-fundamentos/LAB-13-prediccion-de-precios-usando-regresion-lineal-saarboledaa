@@ -61,3 +61,105 @@
 # {'type': 'metrics', 'dataset': 'train', 'r2': 0.8, 'mse': 0.7, 'mad': 0.9}
 # {'type': 'metrics', 'dataset': 'test', 'r2': 0.7, 'mse': 0.6, 'mad': 0.8}
 #
+import pandas as pd
+from sklearn.compose import ColumnTransformer
+from sklearn.preprocessing import OneHotEncoder, MinMaxScaler
+from sklearn.pipeline import Pipeline
+from sklearn.feature_selection import SelectKBest, f_regression
+from sklearn.linear_model import LinearRegression
+from sklearn.model_selection import GridSearchCV
+import os
+import gzip
+import pickle
+from sklearn.metrics import (
+    r2_score,
+    mean_squared_error,
+    mean_absolute_error,
+)
+import json
+
+
+def clean_data(df):
+    df = df.copy()
+    df["Age"] = 2021 - df["Year"]
+    df.drop(columns=["Year", "Car_Name"], inplace=True)
+    return df
+
+
+def add_metrics(dataset, y_true, y_pred):
+    metrics.append(
+        {
+            "type": "metrics",
+            "dataset": dataset,
+            "r2": r2_score(y_true, y_pred),
+            "mse": mean_squared_error(y_true, y_pred),
+            "mad": mean_absolute_error(y_true, y_pred),
+        }
+    )
+
+
+train = pd.read_csv("files/input/train_data.csv.zip")
+test = pd.read_csv("files/input/test_data.csv.zip")
+
+train = clean_data(train)
+test = clean_data(test)
+
+x_train = train.drop(columns=["Present_Price"])
+y_train = train["Present_Price"]
+
+x_test = test.drop(columns=["Present_Price"])
+y_test = test["Present_Price"]
+
+categoricas = ["Fuel_Type", "Selling_type", "Transmission"]
+numericas = ["Selling_Price", "Driven_kms", "Age", "Owner"]
+
+preprocessor = ColumnTransformer(
+    transformers=[
+        ("cat", OneHotEncoder(handle_unknown="ignore"), categoricas),
+        ("num", MinMaxScaler(), numericas), 
+    ]
+)
+
+pipeline = Pipeline(
+    steps=[
+        ("preprocessor", preprocessor),
+        ("selector", SelectKBest(score_func=f_regression)),
+        ("regressor", LinearRegression())
+    ]
+)
+
+param_grid = {
+    "selector__k": range(1, 14),
+}
+
+model = GridSearchCV(
+    estimator=pipeline,
+    param_grid=param_grid,
+    scoring="neg_mean_absolute_error",
+    cv=10,
+    n_jobs=-1,
+    refit=True,
+)
+
+model.fit(x_train, y_train)
+
+os.makedirs("files/models", exist_ok=True)
+
+with gzip.open("files/models/model.pkl.gz", "wb") as f:
+    pickle.dump(model, f)
+
+os.makedirs("files/output", exist_ok=True)
+
+train_pred = model.predict(x_train)
+test_pred = model.predict(x_test)
+
+metrics = []
+
+add_metrics("train", y_train, train_pred)
+add_metrics("test", y_test, test_pred)
+
+with open("files/output/metrics.json", "w") as f:
+
+    for item in metrics:
+        json.dump(item, f)
+        f.write("\n")
