@@ -74,7 +74,7 @@ import pickle
 from sklearn.metrics import (
     r2_score,
     mean_squared_error,
-    mean_absolute_error,
+    median_absolute_error,
 )
 import json
 
@@ -82,7 +82,7 @@ import json
 def clean_data(df):
     df = df.copy()
     df["Age"] = 2021 - df["Year"]
-    df.drop(columns=["Year", "Car_Name"], inplace=True)
+    df = df.drop(columns=["Year", "Car_Name"])
     return df
 
 
@@ -93,7 +93,7 @@ def add_metrics(dataset, y_true, y_pred):
             "dataset": dataset,
             "r2": r2_score(y_true, y_pred),
             "mse": mean_squared_error(y_true, y_pred),
-            "mad": mean_absolute_error(y_true, y_pred),
+            "mad": median_absolute_error(y_true, y_pred),
         }
     )
 
@@ -111,7 +111,7 @@ x_test = test.drop(columns=["Present_Price"])
 y_test = test["Present_Price"]
 
 categoricas = ["Fuel_Type", "Selling_type", "Transmission"]
-numericas = ["Selling_Price", "Driven_kms", "Age", "Owner"]
+numericas = [c for c in x_train.columns if c not in categoricas]
 
 preprocessor = ColumnTransformer(
     transformers=[
@@ -129,14 +129,14 @@ pipeline = Pipeline(
 )
 
 param_grid = {
-    "selector__k": range(1, 14),
+    "selector__k": range(1, 12),
 }
 
 model = GridSearchCV(
     estimator=pipeline,
     param_grid=param_grid,
-    scoring="neg_mean_absolute_error",
     cv=10,
+    scoring="neg_mean_absolute_error",
     n_jobs=-1,
     refit=True,
 )
